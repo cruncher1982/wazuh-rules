@@ -1,120 +1,143 @@
-#!/bin/bash
-# Wazuh Active Response Script for Hypothetical ToolShell Zero-Day Mitigation
-# This script is designed to be triggered by Wazuh rules (e.g., rule IDs 100001, 100002, 100003).
-# It attempts to mitigate the hypothetical threat by:
-# 1. Logging the incident details.
-# 2. Identifying and terminating suspicious processes.
-# 3. Quarantining suspicious files.
-#
-# IMPORTANT: This is a GENERIC and HYPOTHETICAL script.
-# - Always test active response scripts thoroughly in a non-production environment.
-# - Real-world mitigation requires specific knowledge of the exploit and its artifacts.
-# - Running commands like 'kill' or 'mv' can disrupt legitimate system operations if not precise.
+<#
+.SYNOPSIS
+    Wazuh Active Response Script for Hypothetical ToolShell Zero-Day Mitigation (PowerShell)
 
-# --- Active Response Parameters (Wazuh provides these) ---
-# ARGS: <agent_id> <rule_id> <level> <full_log> <srcip> <program_name> <extra_args...>
-# For example:
-# $1 = Agent ID (e.g., 001)
-# $2 = Rule ID (e.g., 100001)
-# $3 = Rule Level (e.g., 10)
-# $4 = Full Log (the entire log line that triggered the alert)
-# $5 = Source IP (if applicable, e.g., for firewall rules)
-# $6 = Program Name (e.g., active-response)
-# $7... = Additional arguments (e.g., extracted fields from the log)
+.DESCRIPTION
+    This script is designed to be triggered by Wazuh rules (e.g., rule IDs 100001-100005).
+    It attempts to mitigate the hypothetical threat by:
+    1. Logging the incident details.
+    2. Identifying and terminating suspicious processes.
+    3. Quarantining suspicious files.
 
-AGENT_ID="$1"
-RULE_ID="$2"
-RULE_LEVEL="$3"
-FULL_LOG="$4"
-SRC_IP="$5"
-PROGRAM_NAME="$6"
+.PARAMETER AgentID
+    The ID of the Wazuh agent that triggered the alert.
+
+.PARAMETER RuleID
+    The ID of the Wazuh rule that triggered the alert.
+
+.PARAMETER RuleLevel
+    The severity level of the triggered rule.
+
+.PARAMETER FullLog
+    The entire log line that triggered the alert.
+
+.PARAMETER SourceIP
+    The source IP address (if applicable).
+
+.PARAMETER ProgramName
+    The name of the active response program (e.g., 'active-response').
+
+.NOTES
+    IMPORTANT: This is a GENERIC and HYPOTHETICAL script.
+    - Always test active response scripts thoroughly in a non-production environment.
+    - Real-world mitigation requires specific knowledge of the exploit and its artifacts.
+    - Running commands like 'Stop-Process' or 'Move-Item' can disrupt legitimate system operations if not precise.
+    - This script assumes the 'FullLog' contains key-value pairs that can be extracted via regex.
+#>
+
+param(
+    [string]$AgentID,
+    [string]$RuleID,
+    [string]$RuleLevel,
+    [string]$FullLog,
+    [string]$SourceIP,
+    [string]$ProgramName
+)
 
 # Define log file for this script's actions
-LOG_FILE="/var/ossec/logs/active-response.log" # For Linux/macOS agents
-# LOG_FILE="C:\Program Files (x86)\ossec-agent\active-response.log" # For Windows agents (adjust path)
+# Adjust this path if your Wazuh agent is installed in a different location
+$LogFile = "C:\Program Files (x86)\ossec-agent\active-response.log"
 
 # Function to log script actions
-log_action() {
-    echo "$(date '+%Y/%m/%d %H:%M:%S') - Agent: ${AGENT_ID}, Rule: ${RULE_ID}, Level: ${RULE_LEVEL} - $1" >> "${LOG_FILE}"
-    # Also print to stdout so Wazuh manager can capture it
-    echo "$1"
+function Log-Action {
+    param(
+        [string]$Message
+    )
+    $Timestamp = Get-Date -Format "yyyy/MM/dd HH:mm:ss"
+    $LogEntry = "$Timestamp - Agent: $AgentID, Rule: $RuleID, Level: $RuleLevel - $Message"
+    Add-Content -Path $LogFile -Value $LogEntry
+    Write-Host $LogEntry # Also print to stdout so Wazuh manager can capture it
 }
 
-log_action "Active response triggered for Rule ID: ${RULE_ID}"
-log_action "Full log: ${FULL_LOG}"
+Log-Action "Active response triggered for Rule ID: $RuleID"
+Log-Action "Full log: $FullLog"
 
 # --- Mitigation Logic ---
 
-# Scenario 1: Rule 100001 (Suspicious Process Creation) or 100003 (Specific Process Name)
+# Scenario 1: Process-related rules (100001, 100003, 100004)
 # Attempt to identify and terminate the suspicious process.
-if [[ "${RULE_ID}" == "100001" || "${RULE_ID}" == "100003" ]]; then
-    log_action "Attempting to identify and terminate suspicious process..."
+if ($RuleID -eq "100001" -or $RuleID -eq "100003" -or $RuleID -eq "100004") {
+    Log-Action "Attempting to identify and terminate suspicious process..."
 
-    # Extract the process image/name from the full log
-    # This is a generic way; a more robust solution would parse JSON logs or use specific fields.
-    # For Sysmon Event ID 1, the image path is typically in 'win.eventdata.image'
-    # Example: "Image": "C:\Users\Public\toolshell.exe"
-    PROCESS_PATH=$(echo "${FULL_LOG}" | grep -oP '"Image": "\K[^"]+' | tail -n 1)
-    PROCESS_NAME=$(basename "${PROCESS_PATH}")
+    # Extract the process image/path from the full log using regex
+    # Sysmon Event ID 1 (Process Creation) typically has 'Image' field
+    $ProcessPathMatch = [regex]::Match($FullLog, '"Image":\s*"([^"]+)"')
+    $ProcessPath = if ($ProcessPathMatch.Success) { $ProcessPathMatch.Groups[1].Value } else { $null }
 
-    if [[ -n "${PROCESS_NAME}" ]]; then
-        log_action "Identified potential malicious process: ${PROCESS_NAME} (Path: ${PROCESS_PATH})"
+    if (-not [string]::IsNullOrEmpty($ProcessPath)) {
+        Log-Action "Identified potential malicious process path: $ProcessPath"
 
-        # Find PIDs of the suspicious process
-        # Using 'pgrep -f' for full command line match, more reliable than just name
-        PIDS=$(pgrep -f "${PROCESS_PATH}")
+        # Get process by path (more reliable than just name for unique identification)
+        # Using WMI as Get-Process doesn't directly support path filtering
+        try {
+            $ProcessesToKill = Get-WmiObject Win32_Process | Where-Object { $_.ExecutablePath -eq $ProcessPath }
 
-        if [[ -n "${PIDS}" ]]; then
-            log_action "Found PIDs for ${PROCESS_NAME}: ${PIDS}. Attempting to kill processes."
-            for PID in ${PIDS}; do
-                kill -9 "${PID}"
-                if [[ $? -eq 0 ]]; then
-                    log_action "Successfully killed process with PID: ${PID}"
-                else
-                    log_action "Failed to kill process with PID: ${PID}"
-                fi
-            done
-        else
-            log_action "No active processes found matching ${PROCESS_NAME} (or ${PROCESS_PATH})."
-        fi
-    else
-        log_action "Could not extract process name/path from log for process termination."
-    fi
-fi
+            if ($ProcessesToKill.Count -gt 0) {
+                Log-Action "Found $($ProcessesToKill.Count) active processes matching path: $ProcessPath. Attempting to kill processes."
+                foreach ($Proc in $ProcessesToKill) {
+                    try {
+                        Stop-Process -Id $Proc.ProcessId -Force -ErrorAction Stop
+                        Log-Action "Successfully killed process with PID: $($Proc.ProcessId) (Name: $($Proc.Name))"
+                    } catch {
+                        Log-Action "Failed to kill process with PID: $($Proc.ProcessId) - Error: $($_.Exception.Message)"
+                    }
+                }
+            } else {
+                Log-Action "No active processes found matching path: $ProcessPath."
+            }
+        } catch {
+            Log-Action "Error querying processes via WMI: $($_.Exception.Message)"
+        }
+    } else {
+        Log-Action "Could not extract process path from log for process termination."
+    }
+}
 
-# Scenario 2: Rule 100002 (Suspicious File Creation)
+# Scenario 2: File-related rules (100002, 100005)
 # Attempt to quarantine the suspicious file.
-if [[ "${RULE_ID}" == "100002" ]]; then
-    log_action "Attempting to quarantine suspicious file..."
+if ($RuleID -eq "100002" -or $RuleID -eq "100005") {
+    Log-Action "Attempting to quarantine suspicious file..."
 
-    # Extract the target filename from the full log
-    # For Sysmon Event ID 11, the target filename is typically in 'win.eventdata.targetFilename'
-    # Example: "TargetFilename": "C:\Windows\System32\malicious.dll"
-    TARGET_FILE=$(echo "${FULL_LOG}" | grep -oP '"TargetFilename": "\K[^"]+' | tail -n 1)
+    # Extract the target filename from the full log using regex
+    # Sysmon Event ID 11 (File Creation) typically has 'TargetFilename' field
+    $TargetFileMatch = [regex]::Match($FullLog, '"TargetFilename":\s*"([^"]+)"')
+    $TargetFile = if ($TargetFileMatch.Success) { $TargetFileMatch.Groups[1].Value } else { $null }
 
-    if [[ -n "${TARGET_FILE}" && -f "${TARGET_FILE}" ]]; then
-        log_action "Identified potential malicious file: ${TARGET_FILE}. Attempting to quarantine."
+    if (-not [string]::IsNullOrEmpty($TargetFile) -and (Test-Path -Path $TargetFile -PathType Leaf)) {
+        Log-Action "Identified potential malicious file: $TargetFile. Attempting to quarantine."
 
-        QUARANTINE_DIR="/var/ossec/active-response/quarantine" # For Linux/macOS agents
-        # QUARANTINE_DIR="C:\Program Files (x86)\ossec-agent\active-response\quarantine" # For Windows agents
+        # Define quarantine directory
+        # Adjust this path if your Wazuh agent is installed in a different location
+        $QuarantineDir = "C:\Program Files (x86)\ossec-agent\active-response\quarantine"
 
-        mkdir -p "${QUARANTINE_DIR}"
-        if [[ $? -ne 0 ]]; then
-            log_action "Error: Could not create quarantine directory: ${QUARANTINE_DIR}"
-        else
-            FILENAME=$(basename "${TARGET_FILE}")
-            QUARANTINED_PATH="${QUARANTINE_DIR}/${FILENAME}_$(date +%s)" # Append timestamp to avoid overwrites
+        try {
+            # Create quarantine directory if it doesn't exist
+            if (-not (Test-Path -Path $QuarantineDir -PathType Container)) {
+                New-Item -ItemType Directory -Path $QuarantineDir -Force | Out-Null
+                Log-Action "Created quarantine directory: $QuarantineDir"
+            }
 
-            mv "${TARGET_FILE}" "${QUARANTINED_PATH}"
-            if [[ $? -eq 0 ]]; then
-                log_action "Successfully quarantined file: ${TARGET_FILE} to ${QUARANTINED_PATH}"
-            else
-                log_action "Failed to quarantine file: ${TARGET_FILE}"
-            fi
-        fi
-    else
-        log_action "Could not extract target file path from log or file does not exist for quarantine."
-    fi
-fi
+            $FileName = Split-Path -Path $TargetFile -Leaf
+            $QuarantinedPath = Join-Path -Path $QuarantineDir -ChildPath "$($FileName)_$(Get-Date -Format 'yyyyMMddHHmmss')" # Append timestamp
 
-log_action "Active response script finished."
+            Move-Item -Path $TargetFile -Destination $QuarantinedPath -Force -ErrorAction Stop
+            Log-Action "Successfully quarantined file: $TargetFile to $QuarantinedPath"
+        } catch {
+            Log-Action "Failed to quarantine file: $TargetFile - Error: $($_.Exception.Message)"
+        }
+    } else {
+        Log-Action "Could not extract target file path from log or file does not exist for quarantine."
+    }
+}
+
+Log-Action "Active response script finished."
