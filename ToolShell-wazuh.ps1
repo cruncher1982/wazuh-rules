@@ -3,11 +3,12 @@
     Wazuh Active Response Script for Hypothetical ToolShell Zero-Day Mitigation (PowerShell)
 
 .DESCRIPTION
-    This script is designed to be triggered by Wazuh rules (e.g., rule IDs 100001-100005).
+    This script is designed to be triggered by Wazuh rules (e.g., rule IDs 100001-100005, and potentially new network rules).
     It attempts to mitigate the hypothetical threat by:
     1. Logging the incident details.
     2. Identifying and terminating suspicious processes.
     3. Quarantining suspicious files.
+    4. Blocking the source IP address if provided and valid.
 
 .PARAMETER AgentID
     The ID of the Wazuh agent that triggered the alert.
@@ -33,6 +34,7 @@
     - Real-world mitigation requires specific knowledge of the exploit and its artifacts.
     - Running commands like 'Stop-Process' or 'Move-Item' can disrupt legitimate system operations if not precise.
     - This script assumes the 'FullLog' contains key-value pairs that can be extracted via regex.
+    - IP blocking rules created by this script are persistent until manually removed or a cleanup mechanism is implemented.
 #>
 
 param(
@@ -139,5 +141,52 @@ if ($RuleID -eq "100002" -or $RuleID -eq "100005") {
         Log-Action "Could not extract target file path from log or file does not exist for quarantine."
     }
 }
+
+# Scenario 3: IP Blocking
+# This section will block the SourceIP if it's a valid IP address.
+# This would typically be triggered by rules that identify a malicious source IP.
+# For example, if you have a rule for failed login attempts from a specific IP, or
+# a network-based rule detecting malicious traffic from an IP.
+if (-not [string]::IsNullOrEmpty($SourceIP)) {
+    # Basic validation for IPv4 address format
+    if ($SourceIP -match "^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$") {
+        Log-Action "Attempting to block source IP: $SourceIP"
+        $RuleName = "Wazuh_AR_Block_ToolShell_IP_$($SourceIP.Replace('.', '_'))_$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+        try {
+            # Check if a rule for this IP already exists to avoid duplicates
+            $ExistingRule = Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
+            if ($ExistingRule) {
+                Log-Action "Firewall rule for IP $SourceIP already exists with name '$RuleName'. Skipping."
+            } else {
+                New-NetFirewallRule -DisplayName $RuleName `
+                                    -Direction Inbound `
+                                    -Action Block `
+                                    -RemoteAddress $SourceIP `
+                                    -Profile Any `
+                                    -Force `
+                                    -ErrorAction Stop | Out-Null
+                Log-Action "Successfully blocked inbound traffic from IP: $SourceIP with rule '$RuleName'."
+
+                # Optionally, block outbound traffic as well
+                New-NetFirewallRule -DisplayName "$RuleName (Outbound)" `
+                                    -Direction Outbound `
+                                    -Action Block `
+                                    -RemoteAddress $SourceIP `
+                                    -Profile Any `
+                                    -Force `
+                                    -ErrorAction Stop | Out-Null
+                Log-Action "Successfully blocked outbound traffic to IP: $SourceIP with rule '$RuleName (Outbound)'."
+            }
+        } catch {
+            Log-Action "Failed to block IP $SourceIP - Error: $($_.Exception.Message)"
+        }
+    } else {
+        Log-Action "Invalid SourceIP format received: $SourceIP. Skipping IP blocking."
+    }
+} else {
+    Log-Action "No SourceIP provided for IP blocking."
+}
+
 
 Log-Action "Active response script finished."
