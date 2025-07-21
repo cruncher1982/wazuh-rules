@@ -60,7 +60,7 @@
   <rule id="100005" level="12">
     <if_sid>60001</if_sid> <!-- Parent rule for Sysmon Event ID 11 (File Creation) -->
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\1[4-6]\\TEMPLATE\\LAYOUTS\\|\\1[4-6]\\WebClients\\|\\inetpub\\wwwroot\\wss\\VirtualDirectories\\</field>
-    <field name="win.eventdata.targetFilename" type="pcre2">(\.aspx|\.ashx|\.ascx|\.config|\.dll|\.exe|\.ps1|\.vbs|\.bat|\.cmd|\.js|\.hta)$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(\.aspx|\.ashx|\.ascx|\.config|\.dll|\.exe|\.ps1|\.vbs|\.bat|\.cmd|\.js|\.hta|\.lnk)$</field>
     <field name="win.eventdata.image" type="pcre2">(?i)w3wp\.exe|explorer\.exe|powershell\.exe|cmd\.exe</field>
     <description>ToolShell Zero-Day Hypothesis (SharePoint): Suspicious file created in SharePoint web application directories. This could indicate web shell deployment or payload drop.</description>
     <mitre>
