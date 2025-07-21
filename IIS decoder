@@ -1,0 +1,39 @@
+<!--
+  - Custom Decoder for IIS Access Logs (W3C Extended Log Format)
+  - This decoder is designed to parse IIS logs and extract fields like URL, method,
+  - user_agent, and a custom 'referer_header' field.
+  - It assumes the default W3C Extended Log File Format with common fields.
+  -
+  - Place this file in /var/ossec/etc/decoders/ (e.g., 0002-iis_custom_decoders.xml)
+  - and restart the Wazuh manager.
+-->
+<decoder name="iis_access_custom">
+  <prematch>^#Fields:</prematch> <!-- Identify IIS W3C logs by their header -->
+  <prematch offset="after_parent">^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}</prematch> <!-- Match log entry start -->
+  <regex>^(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)$</regex>
+  <order>date, time, s_ip, cs_method, cs_uri_stem, cs_uri_query, s_port, cs_username, c_ip, cs_useragent, cs_referer, sc_status, sc_substatus, time_taken</order>
+
+  <!-- Child decoder to extract specific fields from the parsed log -->
+  <decoder name="iis_access_child_custom">
+    <parent>iis_access_custom</parent>
+
+    <!-- Extract method (cs_method) -->
+    <field name="method">%cs_method%</field>
+
+    <!-- Extract URL (cs_uri_stem + cs_uri_query) -->
+    <regex offset="after_parent">\S+ (\S+) (\S+)</regex>
+    <order>url_stem, url_query</order>
+    <field name="url">%url_stem%%url_query%</field>
+
+    <!-- Extract user_agent (cs_useragent) -->
+    <field name="user_agent">%cs_useragent%</field>
+
+    <!-- Extract Referer header (cs_referer) into a custom field 'referer_header' -->
+    <!-- Note: IIS logs typically have a 'cs(Referer)' field. We map it here. -->
+    <field name="referer_header">%cs_referer%</field>
+
+    <!-- Extract source IP (c_ip) -->
+    <field name="srcip">%c_ip%</field>
+
+  </decoder>
+</decoder>
