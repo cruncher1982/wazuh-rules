@@ -42,7 +42,7 @@
     <group>attack,process_execution,zero_day_hypothesis,specific_threat,</group>
   </rule>
 
-  <!-- NEW RULE: Suspicious activity originating from SharePoint IIS worker process (w3wp.exe) -->
+  <!-- Rule: Suspicious activity originating from SharePoint IIS worker process (w3wp.exe) -->
   <rule id="100004" level="12">
     <if_sid>60000</if_sid> <!-- Parent rule for Sysmon Event ID 1 (Process Creation) -->
     <field name="win.eventdata.parentImage" type="pcre2">(?i)w3wp\.exe</field>
@@ -56,7 +56,7 @@
     <group>attack,sharepoint,web_exploit,zero_day_hypothesis,command_execution,</group>
   </rule>
 
-  <!-- NEW RULE: Suspicious file creation in SharePoint web directories -->
+  <!-- Rule: Suspicious file creation in SharePoint web directories -->
   <rule id="100005" level="12">
     <if_sid>60001</if_sid> <!-- Parent rule for Sysmon Event ID 11 (File Creation) -->
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\1[4-6]\\TEMPLATE\\LAYOUTS\\|\\1[4-6]\\WebClients\\|\\inetpub\\wwwroot\\wss\\VirtualDirectories\\</field>
@@ -71,17 +71,70 @@
     <group>attack,sharepoint,web_exploit,zero_day_hypothesis,file_creation,web_shell,</group>
   </rule>
 
-  <!-- NEW RULE: SharePoint ToolPane.aspx POST request (CVE-2025-53770 Hypothesis) -->
+  <!-- UPDATED RULE: SharePoint ToolPane.aspx POST request (CVE-2025-53770 Hypothesis) -->
   <rule id="100006" level="12">
-    <if_sid>31100</if_sid> <!-- Parent rule for IIS access logs (adjust if using different web server logs) -->
-    <field name="url" type="pcre2">(?i)/_layouts/15/ToolPane\.aspx\?DisplayMode=Edit</field>
+    <if_sid>31100</if_sid> <!-- Parent rule for IIS access logs -->
+    <field name="url" type="pcre2">(?i)/_layouts/15/ToolPane\.aspx\?DisplayMode=Edit&amp;a=/ToolPane\.aspx</field>
     <field name="method">POST</field>
-    <description>ToolShell Zero-Day Hypothesis (SharePoint CVE-2025-53770): Detected POST request to ToolPane.aspx with DisplayMode=Edit. This is a highly suspicious activity often associated with SharePoint exploits.</description>
+    <description>ToolShell Zero-Day Hypothesis (SharePoint CVE-2025-53770): Detected POST request to ToolPane.aspx with specific query parameters. This is a highly suspicious activity often associated with SharePoint exploits (CVE-2025-49706/CVE-2025-53770).</description>
     <mitre>
       <id>T1190</id> <!-- Exploit Public-Facing Application -->
       <id>T1071.001</id> <!-- Application Layer Protocol: Web Protocols -->
     </mitre>
     <group>attack,sharepoint,web_exploit,zero_day_hypothesis,network_activity,</group>
+  </rule>
+
+  <!-- NEW RULE: SharePoint ToolPane.aspx POST with specific Referer Header (CVE-2025-53770 Hypothesis) -->
+  <rule id="100007" level="12">
+    <if_sid>31100</if_sid> <!-- Parent rule for IIS access logs -->
+    <field name="url" type="pcre2">(?i)/_layouts/15/ToolPane\.aspx\?DisplayMode=Edit(&amp;a=/ToolPane\.aspx)?</field>
+    <field name="method">POST</field>
+    <field name="extra_data" type="pcre2">(?i)Referer:\s*/_layouts/SignOut\.aspx</field> <!-- Assuming 'extra_data' contains headers -->
+    <description>ToolShell Zero-Day Hypothesis (SharePoint CVE-2025-53770): Detected POST request to ToolPane.aspx with 'Referer: /_layouts/SignOut.aspx' header. Strong indicator of exploit attempt.</description>
+    <mitre>
+      <id>T1190</id> <!-- Exploit Public-Facing Application -->
+      <id>T1071.001</id> <!-- Application Layer Protocol: Web Protocols -->
+    </mitre>
+    <group>attack,sharepoint,web_exploit,zero_day_hypothesis,network_activity,http_header,</group>
+  </rule>
+
+  <!-- NEW RULE: GET request for malicious spinstall0.aspx crypto dumper -->
+  <rule id="100008" level="12">
+    <if_sid>31100</if_sid> <!-- Parent rule for IIS access logs -->
+    <field name="url" type="pcre2">(?i)/_layouts/15/spinstall0\.aspx</field>
+    <field name="method">GET</field>
+    <description>ToolShell Zero-Day Hypothesis (SharePoint): Detected GET request for known malicious ASPX crypto dumper (spinstall0.aspx). Associated with CVE-2021-28474 and ysoserial for RCE.</description>
+    <mitre>
+      <id>T1190</id> <!-- Exploit Public-Facing Application -->
+      <id>T1071.001</id> <!-- Application Layer Protocol: Web Protocols -->
+      <id>T1105</id> <!-- Ingress Tool Transfer -->
+    </mitre>
+    <group>attack,sharepoint,web_exploit,zero_day_hypothesis,network_activity,malicious_file,</group>
+  </rule>
+
+  <!-- NEW RULE: File creation of spinstall0.aspx crypto dumper -->
+  <rule id="100009" level="12">
+    <if_sid>60001</if_sid> <!-- Parent rule for Sysmon Event ID 11 (File Creation) -->
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)C:\\PROGRA~1\\COMMON~1\\MICROS~1\\WEBSER~1\\16\\TEMPLATE\\LAYOUTS\\spinstall0\.aspx</field>
+    <description>ToolShell Zero-Day Hypothesis (SharePoint): Detected creation of malicious spinstall0.aspx crypto dumper. SHA256: 92bb4ddb98eeaf11fc15bb32e71d0a63256a0ed826a03ba293ce3a8bf057a514. Indicates web shell deployment or payload drop.</description>
+    <mitre>
+      <id>T1105</id> <!-- Ingress Tool Transfer -->
+      <id>T1505</id> <!-- Server Software Component -->
+      <id>T1547</id> <!-- Boot or Logon Autostart Execution -->
+    </mitre>
+    <group>attack,sharepoint,web_exploit,zero_day_hypothesis,file_creation,web_shell,malicious_file,</group>
+  </rule>
+
+  <!-- NEW RULE: Suspicious User-Agent in web server logs -->
+  <rule id="100010" level="10">
+    <if_sid>31100</if_sid> <!-- Parent rule for IIS access logs -->
+    <field name="user_agent" type="pcre2">(?i)Mozilla/5\.0 \(Windows NT 10\.0; Win64; x64; rv:120\.0\) Gecko/20100101 Firefox/120\.0</field>
+    <description>ToolShell Zero-Day Hypothesis: Detected specific User-Agent string associated with active exploitation (Firefox 120.0 on Win10 x64).</description>
+    <mitre>
+      <id>T1190</id> <!-- Exploit Public-Facing Application -->
+      <id>T1071.001</id> <!-- Application Layer Protocol: Web Protocols -->
+    </mitre>
+    <group>attack,sharepoint,web_exploit,zero_day_hypothesis,network_activity,user_agent,</group>
   </rule>
 
 </group>
