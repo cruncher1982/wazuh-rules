@@ -1,0 +1,74 @@
+<group name="sysmon_rules,windows,sharepoint,">
+
+  <!-- Rule for detecting suspicious process creation in common exploit paths -->
+  <rule id="100001" level="10">
+    <if_sid>60000</if_sid> <!-- Parent rule for Sysmon Event ID 1 (Process Creation) -->
+    <field name="win.eventdata.image" type="pcre2">(?i)\\temp\\|\\programdata\\|\\users\\public\\|\\windows\\tasks\\|\\appdata\\local\\temp\\</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(powershell|cmd)\.exe.*(encodedcommand|downloadfile|iex|invoke-expression|invoke-webrequest|bitsadmin|certutil|mshta|regsvr32|rundll32|wscript|cscript|schtasks|at|net user|net localgroup|whoami|systeminfo|tasklist|taskkill|sc)\b</field>
+    <description>Suspicious process creation (ToolShell Zero-Day Hypothesis): Process executed from a common temporary/public path with suspicious command-line arguments. This could indicate an initial access or persistence mechanism.</description>
+    <mitre>
+      <id>T1059</id>
+      <id>T1083</id>
+      <id>T1053</id>
+      <id>T1547</id>
+    </mitre>
+    <group>attack,command_execution,suspicious_activity,zero_day_hypothesis,</group>
+  </rule>
+
+  <!-- Rule for detecting suspicious file creation in system directories -->
+  <rule id="100002" level="10">
+    <if_sid>60001</if_sid> <!-- Parent rule for Sysmon Event ID 11 (File Creation) -->
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\windows\\system32\\|\\windows\\syswow64\\|\\windows\\temp\\|\\programdata\\</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(\.exe|\.dll|\.ps1|\.vbs|\.bat|\.cmd|\.js|\.hta|\.lnk)$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)(powershell|cmd|explorer|svchost|wininit|services)\.exe</field>
+    <description>Suspicious file creation (ToolShell Zero-Day Hypothesis): Executable or script created in a sensitive system directory by a potentially compromised process. This could indicate persistence or payload drop.</description>
+    <mitre>
+      <id>T1105</id>
+      <id>T1036</id>
+      <id>T1547</id>
+    </mitre>
+    <group>attack,file_creation,suspicious_activity,zero_day_hypothesis,</group>
+  </rule>
+
+  <!-- Rule for detecting specific "ToolShell" process name (if known/hypothesized) -->
+  <rule id="100003" level="12">
+    <if_sid>60000</if_sid> <!-- Parent rule for Sysmon Event ID 1 (Process Creation) -->
+    <field name="win.eventdata.image" type="pcre2">(?i)toolshell\.exe|tshell\.sh|tshell\.py</field>
+    <description>ToolShell Zero-Day Hypothesis: Detected process name matching 'toolshell' or 'tshell'. This is a direct indicator if the name is known.</description>
+    <mitre>
+      <id>T1059</id>
+      <id>T1083</id>
+    </mitre>
+    <group>attack,process_execution,zero_day_hypothesis,specific_threat,</group>
+  </rule>
+
+  <!-- NEW RULE: Suspicious activity originating from SharePoint IIS worker process (w3wp.exe) -->
+  <rule id="100004" level="12">
+    <if_sid>60000</if_sid> <!-- Parent rule for Sysmon Event ID 1 (Process Creation) -->
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)w3wp\.exe</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)(cmd|powershell|pwsh|bitsadmin|certutil|mshta|regsvr32|rundll32|schtasks|at|net\.exe|whoami|systeminfo|tasklist|taskkill|sc)\.exe</field>
+    <description>ToolShell Zero-Day Hypothesis (SharePoint): Suspicious process spawned by w3wp.exe (IIS worker process for SharePoint). This could indicate code execution via a web vulnerability.</description>
+    <mitre>
+      <id>T1190</id> <!-- Exploit Public-Facing Application -->
+      <id>T1059</id> <!-- Command and Scripting Interpreter -->
+      <id>T1053</id> <!-- Scheduled Task/Job -->
+    </mitre>
+    <group>attack,sharepoint,web_exploit,zero_day_hypothesis,command_execution,</group>
+  </rule>
+
+  <!-- NEW RULE: Suspicious file creation in SharePoint web directories -->
+  <rule id="100005" level="12">
+    <if_sid>60001</if_sid> <!-- Parent rule for Sysmon Event ID 11 (File Creation) -->
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\1[4-6]\\TEMPLATE\\LAYOUTS\\|\\1[4-6]\\WebClients\\|\\inetpub\\wwwroot\\wss\\VirtualDirectories\\</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(\.aspx|\.ashx|\.ascx|\.config|\.dll|\.exe|\.ps1|\.vbs|\.bat|\.cmd|\.js|\.hta)$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)w3wp\.exe|explorer\.exe|powershell\.exe|cmd\.exe</field>
+    <description>ToolShell Zero-Day Hypothesis (SharePoint): Suspicious file created in SharePoint web application directories. This could indicate web shell deployment or payload drop.</description>
+    <mitre>
+      <id>T1105</id> <!-- Ingress Tool Transfer -->
+      <id>T1505</id> <!-- Server Software Component -->
+      <id>T1547</id> <!-- Boot or Logon Autostart Execution -->
+    </mitre>
+    <group>attack,sharepoint,web_exploit,zero_day_hypothesis,file_creation,web_shell,</group>
+  </rule>
+
+</group>
