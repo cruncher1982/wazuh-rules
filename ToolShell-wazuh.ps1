@@ -9,6 +9,7 @@
     2. Identifying and terminating suspicious processes.
     3. Quarantining suspicious files.
     4. Blocking the source IP address if provided and valid.
+    5. Blocking a predefined list of known malicious IP addresses.
 
 .PARAMETER AgentID
     The ID of the Wazuh agent that triggered the alert.
@@ -142,22 +143,19 @@ if ($RuleID -eq "100002" -or $RuleID -eq "100005") {
     }
 }
 
-# Scenario 3: IP Blocking
+# Scenario 3: Dynamic IP Blocking (based on SourceIP from alert)
 # This section will block the SourceIP if it's a valid IP address.
-# This would typically be triggered by rules that identify a malicious source IP.
-# For example, if you have a rule for failed login attempts from a specific IP, or
-# a network-based rule detecting malicious traffic from an IP.
 if (-not [string]::IsNullOrEmpty($SourceIP)) {
     # Basic validation for IPv4 address format
     if ($SourceIP -match "^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$") {
-        Log-Action "Attempting to block source IP: $SourceIP"
-        $RuleName = "Wazuh_AR_Block_ToolShell_IP_$($SourceIP.Replace('.', '_'))_$(Get-Date -Format 'yyyyMMddHHmmss')"
+        Log-Action "Attempting to block dynamic source IP: $SourceIP"
+        $RuleName = "Wazuh_AR_Block_Dynamic_IP_$($SourceIP.Replace('.', '_'))_$(Get-Date -Format 'yyyyMMddHHmmss')"
 
         try {
             # Check if a rule for this IP already exists to avoid duplicates
             $ExistingRule = Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
             if ($ExistingRule) {
-                Log-Action "Firewall rule for IP $SourceIP already exists with name '$RuleName'. Skipping."
+                Log-Action "Firewall rule for dynamic IP $SourceIP already exists with name '$RuleName'. Skipping."
             } else {
                 New-NetFirewallRule -DisplayName $RuleName `
                                     -Direction Inbound `
@@ -166,9 +164,8 @@ if (-not [string]::IsNullOrEmpty($SourceIP)) {
                                     -Profile Any `
                                     -Force `
                                     -ErrorAction Stop | Out-Null
-                Log-Action "Successfully blocked inbound traffic from IP: $SourceIP with rule '$RuleName'."
+                Log-Action "Successfully blocked inbound traffic from dynamic IP: $SourceIP with rule '$RuleName'."
 
-                # Optionally, block outbound traffic as well
                 New-NetFirewallRule -DisplayName "$RuleName (Outbound)" `
                                     -Direction Outbound `
                                     -Action Block `
@@ -176,16 +173,82 @@ if (-not [string]::IsNullOrEmpty($SourceIP)) {
                                     -Profile Any `
                                     -Force `
                                     -ErrorAction Stop | Out-Null
-                Log-Action "Successfully blocked outbound traffic to IP: $SourceIP with rule '$RuleName (Outbound)'."
+                Log-Action "Successfully blocked outbound traffic to dynamic IP: $SourceIP with rule '$RuleName (Outbound)'."
             }
         } catch {
-            Log-Action "Failed to block IP $SourceIP - Error: $($_.Exception.Message)"
+            Log-Action "Failed to block dynamic IP $SourceIP - Error: $($_.Exception.Message)"
         }
     } else {
-        Log-Action "Invalid SourceIP format received: $SourceIP. Skipping IP blocking."
+        Log-Action "Invalid dynamic SourceIP format received: $SourceIP. Skipping dynamic IP blocking."
     }
 } else {
-    Log-Action "No SourceIP provided for IP blocking."
+    Log-Action "No dynamic SourceIP provided for dynamic IP blocking."
+}
+
+# Scenario 4: Predefined IP Blocking (from IOC list)
+# This section will block a predefined list of known malicious IP addresses.
+$PredefinedMaliciousIPs = @(
+    "107.191.58.76",
+    "104.238.159.149",
+    "96.9.125.147",
+    "103.186.30.186",
+    "108.162.221.103",
+    "128.49.100.57",
+    "154.47.29.4",
+    "162.158.14.149",
+    "162.158.14.86",
+    "162.158.19.169",
+    "162.158.90.110",
+    "162.158.94.121",
+    "162.158.94.72",
+    "18.143.202.126",
+    "18.143.202.156",
+    "18.143.202.185",
+    "18.143.202.204",
+    "45.40.52.75"
+)
+
+Log-Action "Attempting to block predefined malicious IP addresses."
+
+foreach ($ip in $PredefinedMaliciousIPs) {
+    Log-Action "Blocking predefined IP: $ip"
+    $RuleNameInbound = "Wazuh_AR_Block_Predefined_IP_$($ip.Replace('.', '_'))_Inbound"
+    $RuleNameOutbound = "Wazuh_AR_Block_Predefined_IP_$($ip.Replace('.', '_'))_Outbound"
+
+    try {
+        # Check if inbound rule already exists
+        $ExistingInboundRule = Get-NetFirewallRule -DisplayName $RuleNameInbound -ErrorAction SilentlyContinue
+        if (-not $ExistingInboundRule) {
+            New-NetFirewallRule -DisplayName $RuleNameInbound `
+                                -Direction Inbound `
+                                -Action Block `
+                                -RemoteAddress $ip `
+                                -Profile Any `
+                                -Force `
+                                -ErrorAction Stop | Out-Null
+            Log-Action "Successfully blocked inbound traffic from predefined IP: $ip with rule '$RuleNameInbound'."
+        } else {
+            Log-Action "Firewall rule for predefined IP $ip (Inbound) already exists with name '$RuleNameInbound'. Skipping."
+        }
+
+        # Check if outbound rule already exists
+        $ExistingOutboundRule = Get-NetFirewallRule -DisplayName $RuleNameOutbound -ErrorAction SilentlyContinue
+        if (-not $ExistingOutboundRule) {
+            New-NetFirewallRule -DisplayName $RuleNameOutbound `
+                                -Direction Outbound `
+                                -Action Block `
+                                -RemoteAddress $ip `
+                                -Profile Any `
+                                -Force `
+                                -ErrorAction Stop | Out-Null
+            Log-Action "Successfully blocked outbound traffic to predefined IP: $ip with rule '$RuleNameOutbound'."
+        } else {
+            Log-Action "Firewall rule for predefined IP $ip (Outbound) already exists with name '$RuleNameOutbound'. Skipping."
+        }
+
+    } catch {
+        Log-Action "Failed to block predefined IP $ip - Error: $($_.Exception.Message)"
+    }
 }
 
 
