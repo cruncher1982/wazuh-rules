@@ -1,0 +1,53 @@
+<!--
+  - Custom Decoder for Sysmon Events (Process Creation and File Creation)
+  - This decoder is designed to work with Sysmon logs collected via the Windows Event Channel.
+  - It extends the default Windows decoders to ensure specific fields needed by the custom rules
+  - (e.g., win.eventdata.image, win.eventdata.commandLine, win.eventdata.parentImage,
+  - win.eventdata.targetFilename, win.eventdata.Hashes) are correctly extracted.
+  -
+  - Place this file in /var/ossec/etc/decoders/ (e.g., 0001-sysmon_custom_decoders.xml)
+  - and restart the Wazuh manager.
+-->
+<decoder name="sysmon_custom">
+  <parent>windows</parent> <!-- Inherit from the base Windows decoder -->
+  <prematch>^WinEvtLog</prematch> <!-- Ensure it's a Windows event log -->
+
+  <!-- Decoder for Sysmon Event ID 1 (Process Creation) -->
+  <decoder name="sysmon_event_1">
+    <parent>sysmon_custom</parent>
+    <field name="win.eventdata.eventid">^1$</field> <!-- Match EventID 1 -->
+    <regex>EventID>1</regex>
+    <regex>Image>(.+?)</regex>
+    <order>win.eventdata.image</order>
+    <regex>CommandLine>(.+?)</regex>
+    <order>win.eventdata.commandLine</order>
+    <regex>ParentImage>(.+?)</regex>
+    <order>win.eventdata.parentImage</order>
+    <regex>Hashes>(.+?)</regex>
+    <order>win.eventdata.hashes</order>
+    <regex>User>(.+?)</regex>
+    <order>win.eventdata.user</order>
+    <regex>ProcessId>(\d+)</regex>
+    <order>win.eventdata.processId</order>
+    <regex>ParentProcessId>(\d+)</regex>
+    <order>win.eventdata.parentProcessId</order>
+  </decoder>
+
+  <!-- Decoder for Sysmon Event ID 11 (File Creation) -->
+  <decoder name="sysmon_event_11">
+    <parent>sysmon_custom</parent>
+    <field name="win.eventdata.eventid">^11$</field> <!-- Match EventID 11 -->
+    <regex>EventID>11</regex>
+    <regex>Image>(.+?)</regex>
+    <order>win.eventdata.image</order>
+    <regex>TargetFilename>(.+?)</regex>
+    <order>win.eventdata.targetFilename</order>
+    <regex>Hashes>(.+?)</regex>
+    <order>win.eventdata.hashes</order>
+    <regex>User>(.+?)</regex>
+    <order>win.eventdata.user</order>
+    <regex>ProcessId>(\d+)</regex>
+    <order>win.eventdata.processId</order>
+  </decoder>
+
+</decoder>
